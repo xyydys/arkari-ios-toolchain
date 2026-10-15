@@ -1,0 +1,52 @@
+name: build-image
+
+# 公开仓库：用免费无限的构建分钟，把 Arkari 工具链编成 Docker 镜像推 GHCR。
+# push 到 main 自动开编；也可在 Actions 手动 Run（可指定 Arkari 版本）。
+# 第一次约 1.5~3 小时（在 runner 上编 clang+lld），之后下游私库直接拉镜像出包。
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      arkari_ref:
+        description: 'Arkari git ref（分支或标签）。默认 llvm-20-obf1.9.1'
+        type: string
+        default: llvm-20-obf1.9.1
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-image:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                      /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          sudo docker image prune -af || true
+          df -h /
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push toolchain image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          build-args: |
+            ARKARI_REF=${{ github.event.inputs.arkari_ref || 'llvm-20-obf1.9.1' }}
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/arkari-ios-toolchain:latest
+            ghcr.io/${{ github.repository_owner }}/arkari-ios-toolchain:${{ github.event.inputs.arkari_ref || 'llvm-20-obf1.9.1' }}
